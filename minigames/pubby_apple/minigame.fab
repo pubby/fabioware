@@ -1,0 +1,157 @@
+//-----------------------------------------------------------------------------
+//
+// YOU MUST DEFINE THESE GLOBALS:
+// '_initial_palette': The palette to be loaded at the start of your minigame.
+// '_setup':           A function called before your minigame starts.
+// '_nmi':             A function called at the start of VBLANK.
+// '_prepare_sprites': A function called to assign the 'oam' buffer.
+// '_loop':            A function called every frame.
+// Additionally, a "minigame" macro invocation must occur in this file!
+//
+// YOU MUST ALSO EDIT:
+// 'minigame_list.fab': Add your minigame's identifier to the list!
+//
+// THINGS TO AVOID:
+// (1) Non-private global identifiers. By default, NESFab makes global 
+//     definitions visible to any and all files. This is bad, as it means your 
+//     code could interfere with someone else's. To prevent this, prefix all
+//     global identifiers with an underscore: '_', like '_my_var'.
+//     Such identifiers will not be exported to other files.
+// (2) Multiple files. This would require breaking (1), so keep all your
+//     code in a single file.
+// (3) Using the 'state' keyword. This breaks the Fabioware runtime!
+// (4) Changing modes. This breaks the Fabioware runtime!
+// (5) Using the APU or PUF. The only permitted way to play sounds is 
+//     with the function 'play_sound'.
+//
+//-----------------------------------------------------------------------------
+
+// This macro invocation is required.
+// 1st argument: Must be "Macro"
+// 2nd argument: The unique identifier to recognize your minigame by.
+//               This should be your username, followed by the name
+//               of the minigame, written as a valid NESFab identifier.
+//               e.g. 'pubby_apple'.
+macro("minigame", "pubby_apple")
+: +fork_scope   // This modifier is required!
+
+ct CCC/strings[] _directions = CCC/strings[](@"Eat!")
+
+// Put global variables here:
+vars /_minigame
+    U _stage = 0
+
+struct _Particle
+    UUF x
+    UUF y
+    SF xspeed
+    SF yspeed
+    U tile
+    U attr
+    U life
+
+macro("pool_contiguous", "_Particle", "64", "_particles", "/_minigame")
+: +fork_scope
+
+data /palettes
+    // '_initial_palette' is the palette used at the start of your minigame.
+    // Of course, you may change the palette later on,
+    // but this is the initial state.
+    // It must be defined in the '/palettes' group.
+    [] _initial_palette
+        // Background colors:
+        U[3]($38, $17, $15)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        // Sprite colors:
+        U[3]($15, $15, $25)
+        U[3]($17, $17, $28)
+        U[3]($17, $17, $28)
+        U[3]($0F, $0F, $0F)
+        // Universal background color:
+        U($20)
+
+
+data /donut
+    [] _bg_chr
+        file(donut, "bg.chr")
+
+data /rlz
+    [] _nt
+        file(rlz, "nt0.nam", false)
+        file(rlz, "nt1.nam", false)
+        file(rlz, "nt2.nam", false)
+        file(rlz, "nt3.nam", true)
+
+// '_setup' is called before your minigame starts.
+// Put any special initialization code here, 
+// such as determining the random positions of objects.
+// The function's return value is a string describing the minigame.
+// NOTE: You may use the buffer 'directions' to create the string.
+// NOTE: Rendering and NMI are OFF during '_setup'; do not turn them on!
+fn _setup()
+    // Upload the CHR:
+    ppu_reset_addr($0000)
+    ppu_upload_donut(@_bg_chr, _bg_chr.chunks)
+
+    // Upload the NTs:
+    ppu_reset_addr($2000)
+    ppu_upload_rlz(@_nt)
+
+// '_nmi' is called once per frame, at the start of NMI.
+// NOTE: Several aspects of the NMI are already handled for you, specifically
+//       the palette, OAM, music engine, and controller updates.
+fn _nmi()
+    // Update the registers before returning:
+    ppu_set_scroll(0, 0)
+    {PPUCTRL}(PPUCTRL_NMI_ON | _stage)
+    {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
+
+// '_prepare_sprites' is called to assign the 'oam' buffer.
+// This occurs both after `_setup`, and after `_loop`.
+fn _prepare_sprites()
+    U o = 0
+
+    // Add the particle sprites:
+    for U i = 0; i < _particles_num; i += 1
+        if _particles[i].x.b == 0 && _particles[i].y.b == 0
+            o = push_oam(o, U(_particles[i].x), U(_particles[i].y), _particles[i].tile, _particles[i].attr)
+
+    hide_oam(o)
+
+// '_loop' is called once per frame, while your minigame is running.
+// Put all your game logic here, handling user input and so on.
+fn _loop()
+    // Update particles
+    for U i = 0; i < _particles_num;
+        _particles[i].life -= 1
+        if _particles[i].life == 0
+            _particles_delete(i)
+        else
+            _particles[i].x += _particles[i].xspeed
+            _particles[i].y += _particles[i].yspeed
+            _particles[i].yspeed += 0.1
+            i += 1
+
+    if beat_minigame
+    else
+        // Handle input
+        if pads[0].pressed & BUTTON_A
+            for U i = 0; i < 20; i += 1
+                _spawn_particle(_stage)
+            _stage += 1
+            if _stage == 3
+                beat_minigame = true
+
+
+fn _spawn_particle(U stage)
+    _Particle p
+    p.x = 128 - 32 + randb(65) - 4
+    p.y = 120 - 64 + randb(129) - 24
+    p.xspeed = SF(rand()) >> 6
+    p.yspeed = (SF(rand()) >> 6) - 2.0
+    p.tile = $FD + randb(3)
+    p.attr = stage | (rand() & %11100000)
+    p.life = 120
+    _particles_new(p)

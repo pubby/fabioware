@@ -1,0 +1,14 @@
+// Various resources and data.
+
+audio(puf1_music)
+audio(puf1_sfx)
+
+charmap(
+    " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\n\x00", 
+    '\x00')
+: stows /strings
+
+data /donut
+    [] font_chr
+        file(donut, "resources/font.png")
+

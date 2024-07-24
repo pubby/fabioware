@@ -1,0 +1,75 @@
+macro("stage", "pc")
+: +fork_scope
+
+data /donut
+    [] _bg_chr
+        file(donut, "bg.chr")
+
+    [] _spr_chr
+        file(donut, "spr.png")
+        : +spr_8x16
+
+data /rlz
+    [] _stage_nt
+        file(rlz, "nt.map")
+
+data /palettes
+    [] _initial_palette
+        // Background colors:
+        U[3]($11, $2B, $3A)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        U[3]($0B, $2C, $20)
+        // Sprite colors:
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        // Universal background color:
+        U($0F)
+
+vars /stage
+    U _nt = 0
+
+fn _push_numeral(U o, U x, U y, U num) U
+    ct U[10] tiles = U[10]($60, $64, $68, $6C, $70, $74, $78, $7C, $A0, $A4)
+    U tile = tiles[num] | 1
+    o = push_oam(o, x+0, y+ 0, tile+ 0, $01)
+    o = push_oam(o, x+8, y+ 0, tile+ 2, $01)
+    o = push_oam(o, x+0, y+16, tile+32, $01)
+    o = push_oam(o, x+8, y+16, tile+34, $01)
+    return o
+        
+fn _prepare_sprites(U o) U
+: +graphviz
+    // Numerals:
+    if stage_state == STST_DISPLAY_FLOOR && stage_state_progress & 32
+        U num_x = 104
+        U num_y = 90
+        U[2] dd = u_to_dd(0)//floor())
+        o = _push_numeral(o, num_x   -1+randb(3), num_y-1+randb(3), dd[1])
+        o = _push_numeral(o, num_x+24-1+randb(3), num_y-1+randb(3), dd[0])
+
+    return o
+
+fn _init()
+    // Load the CHR:
+    ppu_reset_addr($0000)
+    ppu_upload_donut(@_bg_chr, _bg_chr.chunks)
+    ppu_reset_addr($1000)
+    ppu_upload_donut(@font_chr, font_chr.chunks)
+    ppu_upload_donut(@_spr_chr, _spr_chr.chunks)
+
+    // Load the NT:
+    ppu_reset_addr($2000)
+    ppu_upload_rlz(@_stage_nt)
+
+fn _nmi()
+
+fn _update()
+    if nmi_counter & %11 == 0
+        _nt += 1
+        if _nt == 3
+            _nt = 0
+
+    stage_ppuctrl = PPUCTRL_NMI_ON | PPUCTRL_SPR_8X16 | _nt

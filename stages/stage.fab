@@ -1,0 +1,251 @@
+///////////////////////////////////////////////////////////////////////////////
+// Public functions
+///////////////////////////////////////////////////////////////////////////////
+
+// Returns how many lives are left:
+fn lives() U
+    return _lives
+
+// Returns how many minigames have been beaten:
+fn floor() U
+    return _floor
+
+// Returns the current difficulty level.
+// This levels up after beating a few floors.
+fn difficulty() U
+    return _difficulty
+
+// Difficulty levels:
+ct Int EASY   = 0
+ct Int MEDIUM = 1
+ct Int HARD   = 2
+ct Int INSANE = 3
+
+// Returns how many frames are left before the minigame ends.
+fn frames_left() UU
+    return _frames_left
+
+///////////////////////////////////////////////////////////////////////////////
+
+ct Int FADE_PERIOD = 1
+ct Int MAX_LEVEL = 64
+
+// A minigame is defined by the following struct: 
+struct Minigame
+    Fn.minigame_entry_point entry_point
+    CCC/directions directions
+    U directions_num
+
+ct Minigame[] minigames = Minigame[](
+        minigame_pubby_apple
+    )
+
+vars
+    // Minigames should set this to determine if they were completed.
+    U beat_minigame = false
+
+    // stage state:
+    U _lives = 4
+    U _floor = 1
+    U _difficulty = EASY
+    U _level = 0
+    UU _frames_left
+
+vars /stage
+    // These are used to upload direction strings to the PPU:
+    UU _upload_string_ppuaddr = 0
+    CCC/strings _upload_string
+
+    // If the directions should be shown, and how tall:
+    U stage_directions_height = 0
+
+    U stage_state
+    U stage_ppuctrl = PPUCTRL_NMI_ON
+    UF stage_state_progress // Tracks how close we are to the next state.
+    CCC/palettes stage_palette
+    Fn.stage_update stage_update_fn
+    Fn.stage_nmi stage_nmi_fn
+    
+nmi _nmi()
+    if(_upload_string_ppuaddr)
+        // We'll upload strings to the first NT bank:
+        state(GTROM_CHR_BANK)
+        ppu_reset_addr(_upload_string_ppuaddr)
+        for U i = 0; _upload_string[i] != charmap.sentinel; i += 1
+            {PPUDATA}(_upload_string[i])
+
+        if _upload_string_ppuaddr & $800
+            _upload_string_ppuaddr = 0
+        else
+            _upload_string_ppuaddr |= $800
+    else
+        ppu_upload_palette()
+
+    ppu_upload_oam_poll_pads(0)
+    stage_nmi_fn()
+    ppu_reset_scroll(0, 0)
+
+    {PPUCTRL}(stage_ppuctrl)
+    {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
+    state(GTROM_CHR_BANK | GTROM_NT_BANK)
+
+    puf.process(PUF_DEFAULT)
+
+    if(stage_directions_height == $80)
+        {PPUCTRL}(PPUCTRL_NMI_ON | PPUCTRL_BG_PT_1000)
+        state(GTROM_CHR_BANK)
+        {PPUMASK}(PPUMASK_BG_ON | PPUMASK_NO_CLIP)
+    else if(stage_directions_height)
+        ppu_await_status(PPUSTATUS_SPR_0)
+        {PPUCTRL}(PPUCTRL_NMI_ON | PPUCTRL_BG_PT_1000)
+        state(GTROM_CHR_BANK)
+        {PPUMASK}(PPUMASK_BG_ON | PPUMASK_NO_CLIP)
+        ppu_await_status_set(PPUSTATUS_SPR_OVERFLOW)
+        state(GTROM_CHR_BANK | GTROM_NT_BANK)
+        {PPUCTRL}(stage_ppuctrl)
+        {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
+
+// Stage states:
+ct U STST_START      = 0
+ct U STST_GAME_OVER  = 1
+ct U STST_SUCCESS    = 2
+ct U STST_FAILURE    = 3
+ct U STST_DISPLAY_FLOOR = 4
+ct U STST_LEVEL_UP   = 5
+ct U STST_DIRECTIONS = 6
+ct U NUM_STST = 7
+
+mode stage_screen(U new_state)
+: nmi _nmi
+    stage_state = new_state
+
+    // Blank the nametables where the text will appear:
+    state(GTROM_CHR_BANK)
+    ppu_reset_addr($2000)
+    ppu_upload_fill($00, 1024)
+    ppu_reset_addr($2800)
+    ppu_upload_fill($00, 1024)
+
+    // Choose the next minigame and load its directions:
+    U minigame = 0
+    U directions_index = _load_directions(minigame)
+
+    // Fade in:
+    state(GTROM_CHR_BANK | GTROM_NT_BANK)
+    {PPUCTRL}(stage_ppuctrl)
+    fade_in_black(FADE_PERIOD, stage_palette)
+
+    // Run the state machine:
+    while true
+        _stage_state_machine()
+
+ct U[NUM_STST] _frame_times = U[NUM_STST](
+    256 / 128,  // START
+    256 / 192, // GAME OVER
+    256 / 64,  // SUCCESS
+    256 / 64,  // FAILURE
+    256 / 64,  // NEXT FLOOR
+    256 / 64,  // LEVEL UP
+    256 / 64)  // DIRECTIONS
+
+ct UF[4] _difficulty_speed = UF[4](1, 0.875, 0.75, 0.625)
+
+fn _stage_state_machine()
+    // Initial setup:
+    if stage_state == STST_DIRECTIONS
+        stage_directions_height = 1
+
+    UF increment = UF(_frame_times[stage_state] * _difficulty_speed[_difficulty])
+    stage_state_progress = 0.0
+
+    do while !(stage_state_progress += increment)
+        nmi
+        update_pads()
+        stage_update_fn()
+
+        switch stage_state
+            case STST_GAME_OVER
+                // Allow quitting game over screen early:
+                if stage_state_progress > 64 && pads[0].pressed & BUTTON_START
+                    goto done_waiting
+                break
+            case STST_DIRECTIONS
+                // Handle directions growing:
+                if stage_directions_height > 100
+                    stage_directions_height = $80
+                else
+                    stage_directions_height += 1
+                    stage_directions_height *= 1.5
+                break
+
+    label done_waiting
+    
+    // Determine what to do next:
+    switch stage_state
+        case STST_START
+            stage_state = STST_DISPLAY_FLOOR
+            break
+        case STST_GAME_OVER
+            goto mode main()
+            : preserves
+        case STST_SUCCESS
+            _floor += 1
+            if (_floor & %11 == 1)
+                stage_state = STST_LEVEL_UP
+                break
+            // fall-through
+        case STST_FAILURE
+            stage_state = STST_DISPLAY_FLOOR
+            break
+        case STST_DISPLAY_FLOOR
+            stage_state = STST_DIRECTIONS
+            break
+        case STST_LEVEL_UP
+            if _level < MAX_LEVEL
+                _level += 1
+            if _floor & %111 == 1 && _difficulty < INSANE
+                _difficulty += 1
+            stage_state = STST_DISPLAY_FLOOR
+            break
+        case STST_DIRECTIONS
+            // Fade out:
+            fade_out_black(FADE_PERIOD)
+
+            // Prepare the PPU/mapper state:
+            {PPUCTRL}(0)
+            {PPUMASK}(0)
+            state(0)
+
+            // Enter the minigame:
+            minigames[0].entry_point()
+        
+        
+fn _load_directions(U minigame) U
+    U directions_index = randb(minigames[minigame].directions_num)
+    
+    // Grab the string:
+    CCC/directions ptr = minigames[minigame].directions + directions_index*sizeof CCC/strings
+    _upload_string = read CCC/strings(ptr)
+
+    // Calculate the width:
+    U width = 0
+    while _upload_string[width] != charmap.sentinel
+        width += 1
+
+    // Calculate the PPUADDR:
+    fence
+    _upload_string_ppuaddr = $2000 + 14*32 + UU((32 - width) >> 1)
+    fence
+    
+    return directions_index
+
+// Gets called once per frame following the minigame's '_update' call.
+fn tick()
+    _frames_left -= 1
+    if _frames_left = 0
+        fade_out_black(FADE_PERIOD)
+        U stage_state = STST_FAILURE
+        if beat_minigame
+            stage_state = STST_SUCCESS
+        goto mode stage_screen(stage_state)
+        : preserves
