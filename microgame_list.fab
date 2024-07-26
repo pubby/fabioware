@@ -1,0 +1,4 @@
+// Edit this list to add/remove microgames:
+ct Microgame[] microgames = Microgame[](
+    microgame_pubby_apple,
+    microgame_pubby_bath)

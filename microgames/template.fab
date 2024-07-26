@@ -1,0 +1,91 @@
+//-----------------------------------------------------------------------------
+//
+// YOU MUST DEFINE THESE GLOBALS:
+// '_instructions':    An array of instruction strings.
+// '_setup':           A function called before your microgame starts.
+// '_nmi':             A function called at the start of VBLANK.
+// '_prepare_sprites': A function called to assign the 'oam' buffer.
+// '_loop':            A function called every frame.
+// Additionally, a "microgame" macro invocation must occur in this file!
+//
+// YOU MUST ALSO EDIT:
+// 'microgame_list.fab': Add your microgame's identifier to the list!
+// 'fabioware.cfg':      Add your .fab file to the inputs list!
+//
+// THINGS TO AVOID:
+// (1) Non-private global identifiers. By default, NESFab makes global 
+//     definitions visible to any and all files. This is bad, as it means your 
+//     code could interfere with someone else's. To prevent this, prefix all
+//     global identifiers with an underscore: '_', like '_my_var'.
+//     Such identifiers will not be exported to other files.
+// (2) Multiple ".fab" files. This would require breaking (1), so keep all 
+//     your code in a single file.
+// (3) Using the 'state' keyword. This breaks the Fabioware runtime!
+// (4) Changing modes. This breaks the Fabioware runtime!
+//
+// THINGS TO DO:
+// (1) Do support the four possible difficulty levels, using the 'difficulty()'
+//     function to check what difficulty has been reached.
+// (2) Do set the 'winning' variable to mark if the microgame has been won.
+//
+// FABIOWARE INTERFACE:
+//   fn difficulty() U
+//       Returns the current difficulty level, in the range [0, 3].
+///      0 is easy, while 3 is the hardest.
+//   fn frames_left() UU
+//       Returns how many frames you have left until the microgame ends.
+//   Bool winning
+//       Assign this variable to mark if the microgame was beaten or not.
+//   fn puf.play(U sfx)
+//       Plays a sound effect. See 'puf_sfx_list.txt' for a list of options!
+//-----------------------------------------------------------------------------
+
+// This macro invocation is required.
+// The first argument must be "microgame".
+// The second argument is the unique identifier to recognize your microgame by.
+// This identifier should be your usename followed by the microgame's name,
+// e.g. "pubby_apple"
+macro("microgame", "my_identifier")
+: +fork_scope // This modifier is required! Don't remove it!
+
+// Global variables should be defined inside the /_microgame group.
+// The variables in this group will be initialized when your microgame starts.
+vars /_microgame
+
+// '_instructions' are a list of possible instruction strings.
+// The FabioWare runtime will randomly select a string to display before the
+// microgame starts. Typically, your microgame will only have a single string,
+// but you could have more if you have randomized goals.
+// NOTE: You want an exclamation mark for punctuation!
+ct CCC/strings[] _instructions = CCC/strings[](@"Do the thing!")
+
+// '_setup' is called before your microgame starts.
+// Put any special initialization code here, 
+// such as determining the random positions of objects.
+// Typically you should do the following:
+// - Upload CHR.
+// - Load a nametable.
+// - Set the 'palette' variable (e.g. using 'load_palette').
+// The first parameter corresponds to the random instructions chosen from
+// the '_instructions' array.
+// NOTE: Rendering and NMI are OFF during '_setup'; do not turn them on!
+//       Additionally, do not modify the PPU's internal palette here.
+fn _setup(U instructions_index)
+
+// '_nmi' is called once per frame, at the start of NMI.
+// You can modify PPU state here, so long as you're within VBLANK!
+// NOTE: Several aspects of the NMI are already handled for you, specifically
+//       the palette, OAM, music engine, and controller updates.
+fn _nmi()
+
+// '_prepare_sprites' is called to assign the 'oam' buffer.
+// This occurs both after `_setup`, and after `_loop`.
+// Typically you'd use functions like 'push_oam' here.
+fn _prepare_sprites()
+
+// '_loop' is called once per frame, while your microgame is running.
+// Put all your game logic here, handling user input and so on.
+// This function should also set the 'winning' variable to determine
+// if the microgame's victory condition was met.
+fn _loop()
+

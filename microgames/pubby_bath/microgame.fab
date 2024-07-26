@@ -1,0 +1,158 @@
+macro("microgame", "pubby_bath")
+: +fork_scope   // This modifier is required!
+
+ct CCC/strings[] _instructions = CCC/strings[](@"Fill!")
+
+vars /_microgame
+    U _water_raise = 0
+    U _water_level = 240-48
+    U _goal_min 
+    U _goal_max 
+    U _handle_position = 0
+
+struct _Particle
+    U x
+    UF y
+    SF yspeed
+    U tile
+    U attr
+
+macro("pool_contiguous", "_Particle", "32", "_particles", "/_microgame")
+: +fork_scope
+
+data /palettes
+    [25] _palette
+        // Background colors:
+        U[3]($10, $3B, $20)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        // Sprite colors:
+        U[3]($15, $15, $15)
+        U[3]($11, $3C, $20)
+        U[3]($1A, $1A, $1A)
+        U[3]($0F, $10, $20)
+        // Universal background color:
+        U($0F)
+
+
+data /donut
+    [] _bg_chr
+        file(donut, "tub.chr")
+
+    [] _spr_chr
+        file(donut, "spr.png")
+        : +spr_8x16
+
+data /rlz
+    [] _nt
+        file(rlz, "tub.nam", false)
+
+fn _setup() PPP/strings
+    ct U[4] difficulty_table = U[4](24, 16, 12, 8)
+    _goal_max = _water_level - 8 - randb(32)
+    _goal_min = _goal_max - difficulty_table[difficulty()]
+
+    // Load our palette (but don't upload it to the PPU!):
+    load_palette(@_palette)
+
+    // Upload the CHR:
+    ppu_reset_addr($0000)
+    ppu_upload_donut(@_bg_chr, _bg_chr.chunks)
+    ppu_reset_addr($0800)
+    ppu_upload_donut(@_spr_chr, _spr_chr.chunks)
+
+    // Upload the NT:
+    ppu_reset_addr($2000)
+    ppu_upload_rlz(@_nt)
+
+    return @"Fill!"
+
+fn _nmi()
+    // Update the registers before returning:
+    ppu_set_scroll(0, 0)
+    {PPUCTRL}(PPUCTRL_NMI_ON | PPUCTRL_SPR_8X16)
+    {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
+
+    // Handle sprite 0:
+
+data /sprites
+    [] _handle_0
+        (make_metasprite(0, Ms{}(
+            Ms( 0,  0, $84, 3),
+            Ms( 8,  0, $86, 3),
+            Ms(16,  0, $88, 3),
+            Ms(24,  0, $8A, 3))))
+    [] _handle_1
+        (make_metasprite(0, Ms{}(
+            Ms( 0,  0, $8C, 3),
+            Ms( 8,  0, $8E, 3),
+            Ms(16,  0, $90, 3))))
+    [] _handle_2
+        (make_metasprite(0, Ms{}(
+            Ms( 0,  0, $92, 3),
+            Ms( 8,  0, $94, 3))))
+
+fn _prepare_sprites()
+    U o = 0
+
+    // Sprite 0:
+    o = push_oam(o, 200, _water_level, $82, ATTR_PRIORITY)
+
+    // Handle:
+    ct CCC/sprites[3] handle_table = CCC/sprites[3](
+        @_handle_0, @_handle_1, @_handle_2)
+    o = push_oam_metasprite(o, 146, 71, handle_table[_handle_position])
+
+    // Add the particle sprites:
+    for U i = 0; i < _particles_num; i += 1
+        o = push_oam(o, U(_particles[i].x), U(_particles[i].y), _particles[i].tile, _particles[i].attr)
+
+    // Goals:
+    U attr = 0
+    if winning
+        attr = 2
+    for U i = 0; i < 5; i += 1
+        o = push_oam(o, 128-4-48 + U(i * 24), _goal_min-15, $80, attr | ATTR_V_FLIP)
+        o = push_oam(o, 128-4-48 + U(i * 24), _goal_max, $80, attr)
+
+    hide_oam(o)
+
+fn _loop()
+    if pads[0].held & BUTTON_A
+        puf.play_sfx(puf_sfx_sand)
+        if nmi_counter & %11 == 0
+            _spawn_particle()
+            if _handle_position < 2
+                _handle_position += 1
+    else if _handle_position > 0
+        _handle_position -= 1
+
+    // Update particles
+    for U i = 0; i < _particles_num;
+        _particles[i].y += _particles[i].yspeed
+        if _particles[i].y >= _water_level - 8
+            _particles_delete(i)
+            _water_raise += 2
+            puf.play_sfx(puf_sfx_sand)
+        else
+            _particles[i].yspeed += 0.075
+            i += 1
+
+    if _water_raise && nmi_counter & 1
+        _water_level -= 1
+        _water_raise -= 1
+
+    winning = _water_level >= _goal_min && _water_level <= _goal_max
+
+    ppu_await_status(PPUSTATUS_SPR_0)
+    {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP | PPUMASK_EMPHASIZE_B | PPUMASK_GRAYSCALE)
+
+fn _spawn_particle()
+    _Particle p
+    p.x = 128-5+(_particles_num & 1)
+    p.y = 64-8
+    p.yspeed = 2
+    p.tile = $82
+    p.attr = 1
+    _particles_new(p)

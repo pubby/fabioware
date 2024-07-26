@@ -16,14 +16,14 @@ data /rlz
 data /palettes
     [] _initial_palette
         // Background colors:
+        U[3]($20, $20, $20)
         U[3]($11, $2B, $3A)
-        U[3]($0F, $0F, $0F)
         U[3]($0F, $0F, $0F)
         U[3]($0B, $2C, $20)
         // Sprite colors:
         U[3]($0F, $0F, $0F)
-        U[3]($0F, $0F, $0F)
-        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $20)
+        U[3]($05, $15, $20)
         U[3]($0F, $0F, $0F)
         // Universal background color:
         U($0F)
@@ -39,17 +39,116 @@ fn _push_numeral(U o, U x, U y, U num) U
     o = push_oam(o, x+0, y+16, tile+32, $01)
     o = push_oam(o, x+8, y+16, tile+34, $01)
     return o
+
+fn _push_text_block(U o, U x, U y, U tile) U
+: -inline
+    for U i = 0; i < 6; i += 1
+        o = push_oam(o, x+(i<<3), y, tile+(i<<1), 0)
+    for U i = 0; i < 6; i += 1
+        o = push_oam(o, x+(i<<3), y+18, tile+(i<<1)+$20, 0)
+    return o
+
+data /sprites
+    // Here's where we define our metasprite, comprised of four 8x8 tiles:
+    [] _eye_ms
+        (make_metasprite(0, Ms{}(
+            Ms(-8, 0, $E0 | 1, $01),
+            Ms( 0, 0, $E2 | 1, $01))))
+
+    [] _sad_eye_ms
+        (make_metasprite(0, Ms{}(
+            Ms(-8, 0, $E4 | 1, $01),
+            Ms( 0, 0, $E6 | 1, $01))))
+
+    [] _happy_eye_ms
+        (make_metasprite(0, Ms{}(
+            Ms(-8, 0, $E8 | 1, $01),
+            Ms( 0, 0, $EA | 1, $01))))
+
+    [] _dead_eye_ms
+        (make_metasprite(0, Ms{}(
+            Ms(-8, 0, $EC | 1, $01),
+            Ms( 0, 0, $EE | 1, $01))))
+
+    [] _mouth_ms
+        (make_metasprite(0, Ms{}(
+            Ms(-8, -8, $F0 | 1, $01),
+            Ms( 0, -8, $F2 | 1, $01))))
+    
         
 fn _prepare_sprites(U o) U
-: +graphviz
-    // Numerals:
-    if stage_state == STST_DISPLAY_FLOOR && stage_state_progress & 32
-        U num_x = 104
-        U num_y = 90
-        U[2] dd = u_to_dd(0)//floor())
-        o = _push_numeral(o, num_x   -1+randb(3), num_y-1+randb(3), dd[1])
-        o = _push_numeral(o, num_x+24-1+randb(3), num_y-1+randb(3), dd[0])
+    switch stage_state
+        case STST_DISPLAY_FLOOR
+            if stage_state_progress & 32
+                U num_x = 104
+                U num_y = 90
+                U[2] dd = u_to_dd(floor())
+                o = _push_numeral(o, num_x   -1+randb(3), num_y-1+randb(3), dd[1])
+                o = _push_numeral(o, num_x+24-1+randb(3), num_y-1+randb(3), dd[0])
+            break
 
+        case STST_START
+            U y_off = U(sin(stage_state_progress.a << 1) * 2)
+            o = push_oam_metasprite_a(o,  92+4,    88 + y_off, @_eye_ms, 0)
+            o = push_oam_metasprite_a(o,  92+64-4, 88 + y_off, @_eye_ms, ATTR_H_FLIP)
+            y_off = U(sin((stage_state_progress.a << 1) + 16) * 2)
+            o = push_oam_metasprite_a(o,  92+32, 88 + 28 + y_off, @_mouth_ms, ATTR_H_FLIP)
+            break
+
+        case STST_SUCCESS
+            U y_off = U(sin(stage_state_progress.a << 2) * 4)
+            o = push_oam_metasprite_a(o,  92+4,    88 + y_off, @_happy_eye_ms, 0)
+            o = push_oam_metasprite_a(o,  92+64-4, 88 + y_off, @_happy_eye_ms, ATTR_H_FLIP)
+            y_off = U(sin((stage_state_progress.a << 2) + 16) * 4)
+            o = push_oam_metasprite_a(o,  92+32, 88 + 28 + y_off, @_mouth_ms, ATTR_H_FLIP)
+            break
+
+        case STST_FAILURE
+            U x_off = U(sin(stage_state_progress.a << 3) * 4)
+            o = push_oam_metasprite_a(o, x_off + 92+12,    88, @_sad_eye_ms, 0)
+            o = push_oam_metasprite_a(o, x_off + 92+64-12, 88, @_sad_eye_ms, ATTR_H_FLIP)
+            x_off = U(sin((stage_state_progress.a << 3) + 16) * 4)
+            o = push_oam_metasprite_a(o, x_off + 92+32, 88 + 28, @_mouth_ms, ATTR_H_FLIP | ATTR_V_FLIP)
+
+            // Life:
+            U i = lives()
+            U x = 120 + U(i*24)
+            U y = 175
+            o = push_oam(o, x -   U(stage_state_progress >> 5), y - U(stage_state_progress >> 5), $F4 | 1, 2)
+            o = push_oam(o, x+8 + U(stage_state_progress >> 5), y + U(stage_state_progress >> 4), $F6 | 1, 2)
+            break
+
+        case STST_GAME_OVER
+            if stage_state_progress < 64
+                U x_off = U(sin(stage_state_progress.a) * 4)
+                o = push_oam_metasprite_a(o, x_off + 92+12,    88, @_dead_eye_ms, 0)
+                o = push_oam_metasprite_a(o, x_off + 92+64-12, 88, @_dead_eye_ms, ATTR_H_FLIP)
+                x_off = U(sin((stage_state_progress.a) + 16) * 4)
+                o = push_oam_metasprite_a(o, x_off + 92+32, 88 + 28, @_mouth_ms, ATTR_H_FLIP | ATTR_V_FLIP)
+            else
+                U x_off = randb(3)-1
+                U y_off = randb(3)-1
+                o = _push_text_block(o, U(100 + x_off), U(88 + y_off), $B4 | 1)
+            break
+
+        case STST_LEVEL_UP
+            S x_off = S(cos(stage_state_progress.a << 2) * 4)
+            {0}(x_off.a)
+            S y_off = S(sin(stage_state_progress.a << 2) * 4)
+            {0}(y_off.a)
+            o = _push_text_block(o, U(100 + x_off), U(88 + y_off), $A8 | 1)
+            break
+
+    // Lives:
+    for U i = 0; i < lives(); i += 1
+        U tile = $F8 | 1
+        if nmi_counter & 16
+            tile += 4
+        U x = 120 + U(i*24)
+        U y = 175
+        o = push_oam(o, x,   y, tile, 2)
+        o = push_oam(o, x+8, y, tile+2, 2)
+            
     return o
 
 fn _init()

@@ -1,14 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
-// Public functions
+// Fabioware Interface:
 ///////////////////////////////////////////////////////////////////////////////
-
-// Returns how many lives are left:
-fn lives() U
-    return _lives
-
-// Returns how many minigames have been beaten:
-fn floor() U
-    return _floor
 
 // Returns the current difficulty level.
 // This levels up after beating a few floors.
@@ -21,50 +13,65 @@ ct Int MEDIUM = 1
 ct Int HARD   = 2
 ct Int INSANE = 3
 
-// Returns how many frames are left before the minigame ends.
+// Returns how many frames are left before the microgame ends.
 fn frames_left() UU
     return _frames_left
 
+// Returns how many lives are left:
+fn lives() U
+    return _lives
+
+// Returns how many microgames have been beaten:
+fn floor() U
+    return _floor
+
+// Returns how many times the 'level up' display has shown:
+fn level() U
+    return _floor
+
 ///////////////////////////////////////////////////////////////////////////////
 
-ct Int FADE_PERIOD = 1
-ct Int MAX_LEVEL = 64
-
-// A minigame is defined by the following struct: 
-struct Minigame
-    Fn.minigame_entry_point entry_point
-    CCC/directions directions
-    U directions_num
-
-ct Minigame[] minigames = Minigame[](
-        minigame_pubby_apple
-    )
+// A microgame is defined by the following struct: 
+struct Microgame
+    Fn.microgame_entry_point entry_point
+    CCC/instructions instructions
+    U instructions_num
 
 vars
-    // Minigames should set this to determine if they were completed.
-    U beat_minigame = false
+    Bool paused = false
+
+vars /stage
+    // Microgames should set this to determine if they were completed.
+    U winning = false
 
     // stage state:
-    U _lives = 4
-    U _floor = 1
     U _difficulty = EASY
+    U _lives = 3
+    U _floor = 1
     U _level = 0
     UU _frames_left
 
-vars /stage
+    U stage_state
+
+    CCC/palettes stage_palette
+    Fn.stage_update stage_update_fn
+    Fn.stage_nmi stage_nmi_fn
+
+    U[8] _prev_microgames = U[8]($FF)
+    U _prev_microgames_i = 0
+
+vars /stage_transient
     // These are used to upload direction strings to the PPU:
     UU _upload_string_ppuaddr = 0
     CCC/strings _upload_string
 
-    // If the directions should be shown, and how tall:
-    U stage_directions_height = 0
+    // If the instructions should be shown, and how tall:
+    U stage_instructions_height = 0
 
-    U stage_state
-    U stage_ppuctrl = PPUCTRL_NMI_ON
     UF stage_state_progress // Tracks how close we are to the next state.
-    CCC/palettes stage_palette
-    Fn.stage_update stage_update_fn
-    Fn.stage_nmi stage_nmi_fn
+    U stage_ppuctrl = PPUCTRL_NMI_ON
+
+    U _microgame
     
 nmi _nmi()
     if(_upload_string_ppuaddr)
@@ -85,17 +92,14 @@ nmi _nmi()
     stage_nmi_fn()
     ppu_reset_scroll(0, 0)
 
-    {PPUCTRL}(stage_ppuctrl)
-    {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
-    state(GTROM_CHR_BANK | GTROM_NT_BANK)
-
-    puf.process(PUF_DEFAULT)
-
-    if(stage_directions_height == $80)
+    if stage_instructions_height == $80
         {PPUCTRL}(PPUCTRL_NMI_ON | PPUCTRL_BG_PT_1000)
         state(GTROM_CHR_BANK)
         {PPUMASK}(PPUMASK_BG_ON | PPUMASK_NO_CLIP)
-    else if(stage_directions_height)
+    else if stage_instructions_height 
+        {PPUCTRL}(stage_ppuctrl)
+        {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
+        state(GTROM_CHR_BANK | GTROM_NT_BANK)
         ppu_await_status(PPUSTATUS_SPR_0)
         {PPUCTRL}(PPUCTRL_NMI_ON | PPUCTRL_BG_PT_1000)
         state(GTROM_CHR_BANK)
@@ -104,31 +108,41 @@ nmi _nmi()
         state(GTROM_CHR_BANK | GTROM_NT_BANK)
         {PPUCTRL}(stage_ppuctrl)
         {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
+    else
+        {PPUCTRL}(stage_ppuctrl)
+        {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
+        state(GTROM_CHR_BANK | GTROM_NT_BANK)
+
+    puf.process(PUF_DEFAULT)
+
 
 // Stage states:
-ct U STST_START      = 0
-ct U STST_GAME_OVER  = 1
-ct U STST_SUCCESS    = 2
-ct U STST_FAILURE    = 3
+ct U STST_START         = 0
+ct U STST_GAME_OVER     = 1
+ct U STST_SUCCESS       = 2
+ct U STST_FAILURE       = 3
 ct U STST_DISPLAY_FLOOR = 4
-ct U STST_LEVEL_UP   = 5
-ct U STST_DIRECTIONS = 6
-ct U NUM_STST = 7
+ct U STST_LEVEL_UP      = 5
+ct U STST_INSTRUCTIONS  = 6
+ct U NUM_STST           = 7
 
 mode stage_screen(U new_state)
 : nmi _nmi
+    {PPUCTRL}(0)
+    {PPUMASK}(0)
+    state(GTROM_CHR_BANK)
+
     stage_state = new_state
 
     // Blank the nametables where the text will appear:
-    state(GTROM_CHR_BANK)
     ppu_reset_addr($2000)
     ppu_upload_fill($00, 1024)
     ppu_reset_addr($2800)
     ppu_upload_fill($00, 1024)
 
-    // Choose the next minigame and load its directions:
-    U minigame = 0
-    U directions_index = _load_directions(minigame)
+    // Choose the next microgame and load its instructions:
+    _select_microgame()
+    U instructions_index = _load_instructions(_microgame)
 
     // Fade in:
     state(GTROM_CHR_BANK | GTROM_NT_BANK)
@@ -140,20 +154,25 @@ mode stage_screen(U new_state)
         _stage_state_machine()
 
 ct U[NUM_STST] _frame_times = U[NUM_STST](
-    256 / 128,  // START
-    256 / 192, // GAME OVER
+    256 / 128, // START
+    256 / 256, // GAME OVER
     256 / 64,  // SUCCESS
     256 / 64,  // FAILURE
     256 / 64,  // NEXT FLOOR
     256 / 64,  // LEVEL UP
-    256 / 64)  // DIRECTIONS
+    256 / 64)  // instructions
 
-ct UF[4] _difficulty_speed = UF[4](1, 0.875, 0.75, 0.625)
+ct UF[4] _difficulty_speed = UF[4](1, 1.25, 1.5, 2.0)
 
 fn _stage_state_machine()
     // Initial setup:
-    if stage_state == STST_DIRECTIONS
-        stage_directions_height = 1
+    switch stage_state
+        case STST_FAILURE
+            _lives -= 1
+            break
+        case STST_INSTRUCTIONS
+            stage_instructions_height = 1
+            break
 
     UF increment = UF(_frame_times[stage_state] * _difficulty_speed[_difficulty])
     stage_state_progress = 0.0
@@ -169,13 +188,12 @@ fn _stage_state_machine()
                 if stage_state_progress > 64 && pads[0].pressed & BUTTON_START
                     goto done_waiting
                 break
-            case STST_DIRECTIONS
-                // Handle directions growing:
-                if stage_directions_height > 100
-                    stage_directions_height = $80
-                else
-                    stage_directions_height += 1
-                    stage_directions_height *= 1.5
+            case STST_INSTRUCTIONS
+                // Handle instructions growing:
+                stage_instructions_height += 1
+                stage_instructions_height *= 1.5
+                if stage_instructions_height > 100
+                    stage_instructions_height = $80
                 break
 
     label done_waiting
@@ -195,19 +213,21 @@ fn _stage_state_machine()
                 break
             // fall-through
         case STST_FAILURE
-            stage_state = STST_DISPLAY_FLOOR
+            if _lives == 0
+                stage_state = STST_GAME_OVER
+            else
+                stage_state = STST_DISPLAY_FLOOR
             break
         case STST_DISPLAY_FLOOR
-            stage_state = STST_DIRECTIONS
+            stage_state = STST_INSTRUCTIONS
             break
         case STST_LEVEL_UP
-            if _level < MAX_LEVEL
-                _level += 1
+            _level += 1
             if _floor & %111 == 1 && _difficulty < INSANE
                 _difficulty += 1
             stage_state = STST_DISPLAY_FLOOR
             break
-        case STST_DIRECTIONS
+        case STST_INSTRUCTIONS
             // Fade out:
             fade_out_black(FADE_PERIOD)
 
@@ -216,15 +236,17 @@ fn _stage_state_machine()
             {PPUMASK}(0)
             state(0)
 
-            // Enter the minigame:
-            minigames[0].entry_point()
+            _frames_left = 180
+            winning = false
+
+            // Enter the microgame:
+            microgames[_microgame].entry_point()
         
-        
-fn _load_directions(U minigame) U
-    U directions_index = randb(minigames[minigame].directions_num)
+fn _load_instructions(U microgame) U
+    U instructions_index = randb(microgames[microgame].instructions_num)
     
     // Grab the string:
-    CCC/directions ptr = minigames[minigame].directions + directions_index*sizeof CCC/strings
+    CCC/instructions ptr = microgames[microgame].instructions + instructions_index*sizeof CCC/strings
     _upload_string = read CCC/strings(ptr)
 
     // Calculate the width:
@@ -237,15 +259,56 @@ fn _load_directions(U minigame) U
     _upload_string_ppuaddr = $2000 + 14*32 + UU((32 - width) >> 1)
     fence
     
-    return directions_index
+    return instructions_index
 
-// Gets called once per frame following the minigame's '_update' call.
-fn tick()
+fn _select_microgame()
+    do for U i = 0; i < 8; i += 1
+        // Randomly choose a microgame:
+        _microgame = randb(len(microgames))
+        
+        // Check to see if it was recently used:
+        do for U j = i; j < 8; j += 1
+            if _prev_microgames[(_prev_microgames_i + j) & %111] == _microgame
+                goto retry
+
+        break
+        label retry
+
+    _prev_microgames[_prev_microgames_i] = _microgame
+    _prev_microgames_i += 1
+    _prev_microgames_i &= %111
+
+fn handle_pause()
+    if pads[0].pressed & BUTTON_START
+        paused = true
+        while true
+            nmi
+            update_pads()
+            if pads[0].pressed & BUTTON_START
+                paused = false
+                break
+
+// Gets called once per frame before the microgame's '_update' call.
+fn pre_tick()
+: -inline
+    update_pads()
+    if pads[0].pressed & BUTTON_START
+        paused = !paused
+
+// Gets called once per frame following the microgame's '_update' call.
+fn post_tick()
+: -inline
     _frames_left -= 1
-    if _frames_left = 0
-        fade_out_black(FADE_PERIOD)
-        U stage_state = STST_FAILURE
-        if beat_minigame
-            stage_state = STST_SUCCESS
-        goto mode stage_screen(stage_state)
-        : preserves
+    if _frames_left == 0
+        fade_out_black(FADE_PERIOD_SLOW)
+        U new_state = STST_FAILURE
+        if winning
+            new_state = STST_SUCCESS
+        goto mode stage_screen(new_state)
+        : preserves /stage
+
+fn stage_microgame_prep()
+: -inline
+    {PPUCTRL}(0)
+    {PPUMASK}(0)
+    state(GTROM_CHR_BANK | GTROM_NT_BANK)

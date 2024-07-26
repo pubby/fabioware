@@ -1,0 +1,13 @@
+
+ct Int FADE_PERIOD = 1
+ct Int FADE_PERIOD_SLOW = 2
+
+vars /palettes
+    [25] palette_buffer
+
+fn move_to_palette_buffer(U fill)
+: -inline
+    for U i = 0; i < len(palette); i += 1
+        @palette_buffer[i] = palette[i]
+    palette = U[25](fill)
+

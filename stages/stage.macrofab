@@ -11,27 +11,21 @@ fn _macro_prepare_sprites()
     U o = 0
 
     // Sprite 0:
-    o = push_oam(o, 190, 116 - stage_directions_height, $01, ATTR_PRIORITY)
+    o = push_oam(o, 190, 116 - stage_instructions_height, $01, ATTR_PRIORITY)
 
     // Stage-specific:
     o = _prepare_sprites(o)
 
     // Sprite overflow:
     for U i = 0; i < 9; i += 1
-        o = push_oam(o, 190, 116 + stage_directions_height, $01, ATTR_PRIORITY)
+        o = push_oam(o, 190, 116 + stage_instructions_height, $01, ATTR_PRIORITY)
 
     hide_oam(o)
 
 mode stage_#name#()
-    {PPUCTRL}(0)
-    {PPUMASK}(0)
-    state(GTROM_CHR_BANK | GTROM_NT_BANK)
-
-    palette = U[25]($0F)
-    ppu_upload_palette()
+    stage_microgame_prep()
 
     stage_palette = @_initial_palette
-    stage_ppuctrl = PPUCTRL_NMI_ON
     stage_update_fn = @(stage_update.#name#)
     stage_nmi_fn = @(stage_nmi.#name#)
 

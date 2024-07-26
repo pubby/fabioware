@@ -1,0 +1,46 @@
+// This macro packages microgames to be usable by the FabioWare runtime.
+
+#:name:# // The name of the microgame.
+
+data /instructions
+    [] _macro_instructions
+        CCC/strings[](_instructions)
+
+// The public definition of the microgame:
+ct Microgame microgame_#name# = Microgame(@(microgame_entry_point.#name#), @_macro_instructions, len(_instructions))
+
+fn microgame_entry_point.#name#()
+    goto mode _macro_setup()
+    : preserves /stage
+
+nmi _macro_nmi()
+    ppu_upload_palette()
+    ppu_upload_oam_poll_pads(0)
+    if paused
+        state(GTROM_CHR_BANK | GTROM_NT_BANK)
+        {PPUCTRL}(PPUCTRL_NMI_ON | PPUCTRL_NT_2C00 | PPUCTRL_BG_PT_1000)
+        {PPUMASK}(PPUMASK_BG_ON | PPUMASK_NO_CLIP)
+    else
+        state(0)
+        _nmi()
+    puf.process(PUF_DEFAULT)
+
+mode _macro_setup()
+    _setup()
+    _prepare_sprites()
+    move_to_palette_buffer($0F)
+    goto mode _macro_main()
+    : preserves /stage/_microgame
+
+mode _macro_main()
+: nmi _macro_nmi
+    {PPUCTRL}(PPUCTRL_NMI_ON)
+    fade_in_black(FADE_PERIOD, @palette_buffer)
+    while true
+        nmi
+        pre_tick()
+        if !paused
+            _loop()
+            _prepare_sprites()
+            post_tick()
+

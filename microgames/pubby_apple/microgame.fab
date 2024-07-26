@@ -1,0 +1,124 @@
+macro("microgame", "pubby_apple")
+: +fork_scope
+
+ct CCC/strings[] _instructions = CCC/strings[](@"Munch!")
+
+vars /_microgame
+    U _stage = 0
+    U _presses_left
+
+struct _Particle
+    UUF x
+    UUF y
+    SF xspeed
+    SF yspeed
+    U tile
+    U attr
+    U life
+
+macro("pool_contiguous", "_Particle", "48", "_particles", "/_microgame")
+: +fork_scope
+
+data /palettes
+    [] _palette
+        // Background colors:
+        U[3]($38, $17, $15)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        // Sprite colors:
+        U[3]($15, $15, $25)
+        U[3]($17, $17, $28)
+        U[3]($17, $17, $28)
+        U[3]($17, $17, $28)
+        // Universal background color:
+        U($20)
+
+
+data /donut
+    [] _bg_chr
+        file(donut, "bg.chr")
+
+data /rlz
+    [] _nt
+        file(rlz, "nt0.nam", false)
+        file(rlz, "nt1.nam", false)
+        file(rlz, "nt2.nam", false)
+        file(rlz, "nt3.nam", true)
+
+fn _setup()
+    _presses_left = difficulty()
+
+    // Load our palette (but don't upload it to the PPU!):
+    load_palette(@_palette)
+
+    // Upload the CHR:
+    ppu_reset_addr($0000)
+    ppu_upload_donut(@_bg_chr, _bg_chr.chunks)
+
+    // Upload the NTs:
+    ppu_reset_addr($2000)
+    ppu_upload_rlz(@_nt)
+
+fn _nmi()
+    // Update the registers before returning:
+    ppu_set_scroll(0, 0)
+    if _stage == 4
+        {PPUCTRL}(PPUCTRL_NMI_ON)
+        {PPUMASK}(PPUMASK_SPR_ON | PPUMASK_NO_CLIP)
+    else
+        {PPUCTRL}(PPUCTRL_NMI_ON | _stage)
+        {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
+
+fn _prepare_sprites()
+    U o = 0
+
+    // Add the particle sprites:
+    for U i = 0; i < _particles_num; i += 1
+        if _particles[i].x.b == 0 && _particles[i].y.b == 0
+            o = push_oam(o, U(_particles[i].x), U(_particles[i].y), _particles[i].tile, _particles[i].attr)
+
+    hide_oam(o)
+
+fn _loop()
+    // Update particles
+    for U i = 0; i < _particles_num;
+        _particles[i].life -= 1
+        if _particles[i].life == 0
+            _particles_delete(i)
+        else
+            _particles[i].x += _particles[i].xspeed
+            _particles[i].y += _particles[i].yspeed
+            _particles[i].yspeed += 0.1
+            i += 1
+
+    if !winning
+        // Handle input
+        if pads[0].pressed & BUTTON_A
+            ct U[4] particle_count = U[4](16, 8, 4, 2)
+
+            puf.play_sfx(puf_sfx_knock)
+
+            for U i = 0; i < particle_count[difficulty()]; i += 1
+                _spawn_particle(_stage)
+
+            if _presses_left == 0
+                _presses_left = difficulty()
+                _stage += 1
+                if _stage == 4
+                    puf.play_sfx(puf_sfx_bomb)
+                    winning = true
+            else
+                _presses_left -= 1
+
+
+fn _spawn_particle(U stage)
+    _Particle p
+    p.x = 128 - 32 + randb(65) - 4
+    p.y = 120 - 64 + randb(129) - 24
+    p.xspeed = SF(rand()) >> 6
+    p.yspeed = (SF(rand()) >> 6) - 2.0
+    p.tile = $FD + randb(3)
+    p.attr = stage | (rand() & %11000000)
+    p.life = 120
+    _particles_new(p)
