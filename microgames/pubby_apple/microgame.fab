@@ -46,7 +46,7 @@ data /rlz
         file(rlz, "nt2.nam", false)
         file(rlz, "nt3.nam", true)
 
-fn _setup()
+fn _setup(U instructions_index)
     _presses_left = difficulty()
 
     // Load our palette (but don't upload it to the PPU!):

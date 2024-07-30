@@ -67,7 +67,7 @@ macro("microgame", "my_identifier")
 // Global variables should be defined inside the '/_microgame' group.
 // The variables in this group will be initialized when your microgame starts.
 vars /_microgame
-    U _example_varable = 10 // Example of a variable and its initialization.
+    U _example_variable = 10 // Example of a variable and its initialization.
 
 // Typically you should put palette data in the '/palettes' group,
 // and copy them to the 'palette' variable using 'load_palette'.

@@ -55,6 +55,8 @@ vars /stage
 
     U stage_state
 
+    U stage_instructions_index = 0
+
     CCC/palettes stage_palette
     Fn.stage_update stage_update_fn
     Fn.stage_nmi stage_nmi_fn
@@ -149,7 +151,7 @@ mode stage_screen(U new_state)
 
     // Choose the next microgame and load its instructions:
     _select_microgame()
-    U instructions_index = _load_instructions(_microgame)
+    _load_instructions(_microgame)
 
     // Fade in:
     state(GTROM_CHR_BANK | GTROM_NT_BANK)
@@ -255,11 +257,11 @@ fn _stage_state_machine()
             // Enter the microgame:
             microgames[_microgame].entry_point()
         
-fn _load_instructions(U microgame) U
-    U instructions_index = randb(microgames[microgame].instructions_num)
+fn _load_instructions(U microgame)
+    stage_instructions_index = randb(microgames[microgame].instructions_num)
     
     // Grab the string:
-    CCC/instructions ptr = microgames[microgame].instructions + instructions_index*sizeof CCC/strings
+    CCC/instructions ptr = microgames[microgame].instructions + stage_instructions_index*sizeof CCC/strings
     _upload_string = read CCC/strings(ptr)
 
     // Calculate the width:
@@ -271,8 +273,6 @@ fn _load_instructions(U microgame) U
     fence
     _upload_string_ppuaddr = $2000 + 14*32 + UU((32 - width) >> 1)
     fence
-    
-    return instructions_index
 
 fn _select_microgame()
     do for U i = 0; i < 8; i += 1

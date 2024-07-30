@@ -1,0 +1,144 @@
+macro("microgame", "pubby_spotlight")
+: +fork_scope // This modifier is required! Don't remove it!
+
+vars /_microgame
+    // Scroll registers:
+    U _scroll_x = 0
+    U _scroll_y = 0
+    U _scroll_nt = 0
+
+    // Moving character variables:
+    UF _o_x = 128
+    UF _o_y = 120
+    SF _o_dx = 0.0
+    SF _o_dy = 0.0
+    U _o_timer = 5
+
+data /palettes
+    [25] _example_palette // Example of palette data.
+        // Background colors:
+        U[3]($18, $28, $38)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        // Sprite colors:
+        U[3]($11, $24, $0F)
+        U[3]($01, $04, $0F)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        // Universal background color:
+        U($0F)
+
+data /donut
+    [] _bg_chr
+        file(donut, "bg.chr")
+    [] _spr_chr
+        file(donut, "spr.png")
+        : +spr_8x16
+
+data /rlz
+    [] _bg0_nt
+        file(rlz, "bg0.nam")
+    [] _bg1_nt
+        file(rlz, "bg1.nam")
+    [] _bg2_nt
+        file(rlz, "bg2.nam")
+
+ct CCC/strings[] _instructions = CCC/strings[](@"Keep lit!")
+
+fn _setup(U instructions_index)
+    // Palette:
+    load_palette(@_example_palette)
+
+    // CHR:
+    ppu_reset_addr($0000)
+    ppu_upload_donut(@_bg_chr, _bg_chr.chunks)
+    ppu_upload_donut(@_spr_chr, _spr_chr.chunks)
+
+    // Nametables:
+    ct CCC/rlz[3] nt_table = CCC/rlz[3](@_bg0_nt, @_bg1_nt, @_bg2_nt)
+    ppu_reset_addr($2000)
+    ppu_upload_rlz(nt_table[difficulty()])
+    ppu_upload_fill($00, 1024*3)
+
+    // Start in the light:
+    winning = true
+
+fn _nmi()
+    // Use sprite 0 to determine if the character is in the light,
+    // storing the result in the 'winning' variable:
+    winning = {PPUSTATUS}() & PPUSTATUS_SPR_0
+
+    // Set the PPU registers:
+    ppu_reset_scroll(_scroll_x, _scroll_y)
+    {PPUCTRL}(PPUCTRL_NMI_ON | PPUCTRL_SPR_8X16 | _scroll_nt)
+    {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
+
+fn _prepare_sprites()
+    U o = 0 // Our index into the OAM buffer
+
+    // Sprite 0:
+    o = push_oam(o, U(_o_x), U(_o_y), $8C, 3 | ATTR_PRIORITY)
+
+    // Character sprites:
+    U[4] tile_table = U[4]($80, $84, $80, $88)
+    U tile = tile_table[(nmi_counter >> 4) & %11]
+    U attr = 0
+    if !winning
+        attr = 1
+    o = push_oam(o, U(_o_x) - 8, U(_o_y) - 8, tile, attr)
+    o = push_oam(o, U(_o_x) - 0, U(_o_y) - 8, tile + 2, attr)
+
+    hide_oam(o) // Clear the remaining OAM.
+
+fn _loop()
+    // First handle the scroll:
+
+    ct Int SCROLL_SPEED = 2
+
+    if pads[0].held & BUTTON_RIGHT
+        if !(_scroll_x -= SCROLL_SPEED)
+            _scroll_nt ^= 1
+
+    if pads[0].held & BUTTON_LEFT
+        if _scroll_x += SCROLL_SPEED
+            _scroll_nt ^= 1
+
+    if pads[0].held & BUTTON_DOWN
+        if !(_scroll_y -= SCROLL_SPEED)
+            _scroll_y += 240
+            _scroll_nt ^= 2
+
+    if pads[0].held & BUTTON_UP
+        _scroll_y += SCROLL_SPEED
+        if _scroll_y >= 240
+            _scroll_y -= 240
+            _scroll_nt ^= 2
+
+    // Then handle the character:
+
+    if _o_timer == 0
+        _randomize_direction()
+        _o_timer = 30 + randb(60)
+    else
+        _o_timer -= 1
+
+    _o_x += _o_dx
+    _o_y += _o_dy
+
+    // Sound effects
+    if nmi_counter & %11111 == %10000
+        puf.play_sfx(puf_sfx_double_blip)
+
+fn _randomize_direction()
+    // Randomly set the direction:
+    U dir = rand()
+    UF speed = UF(rand() | rand()) >> 8
+    _o_dx = SF(cos(dir) * speed)
+    _o_dy = SF(sin(dir) * speed)
+
+    // Ensure the character doesn't get too close to the edge:
+    if (_o_x < 64 && _o_dx < 0) || (_o_x > 256-64 && _o_dx > 0)
+        _o_dx = -_o_dx
+    if (_o_y < 64 && _o_dy < 0) || (_o_y > 240-64 && _o_dy > 0)
+        _o_dy = -_o_dy

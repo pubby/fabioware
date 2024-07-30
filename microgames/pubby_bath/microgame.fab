@@ -48,7 +48,7 @@ data /rlz
     [] _nt
         file(rlz, "tub.nam", false)
 
-fn _setup() PPP/strings
+fn _setup(U instructions_index)
     ct U[3] difficulty_table = U[3](24, 16, 8)
     _goal_max = _water_level - 8 - randb(32)
     _goal_min = _goal_max - difficulty_table[difficulty()]
@@ -65,8 +65,6 @@ fn _setup() PPP/strings
     // Upload the NT:
     ppu_reset_addr($2000)
     ppu_upload_rlz(@_nt)
-
-    return @"Fill!"
 
 fn _nmi()
     // Update the registers before returning:

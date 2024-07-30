@@ -24,7 +24,7 @@ nmi _macro_nmi()
     puf.process(PUF_DEFAULT)
 
 mode _macro_setup()
-    _setup()
+    _setup(stage_instructions_index)
     _prepare_sprites()
     move_to_palette_buffer($0F)
     goto mode _macro_main()
@@ -32,6 +32,7 @@ mode _macro_setup()
 
 mode _macro_main()
 : nmi _macro_nmi
+: employs /_microgame
     {PPUCTRL}(PPUCTRL_NMI_ON)
     fade_in_black(FADE_PERIOD, @palette_buffer)
     while true
