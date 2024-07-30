@@ -95,7 +95,7 @@ fn _prepare_sprites()
     U o = 0
 
     // Sprite 0:
-    o = push_oam(o, 200, _water_level, $82, ATTR_PRIORITY)
+    o = push_oam(o, 202, _water_level-1, $82, ATTR_PRIORITY)
 
     // Handle:
     ct CCC/sprites[3] handle_table = CCC/sprites[3](

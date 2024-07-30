@@ -133,9 +133,7 @@ fn _prepare_sprites(U o) U
 
         case STST_LEVEL_UP
             S x_off = S(cos(stage_state_progress.a << 2) * 4)
-            {0}(x_off.a)
             S y_off = S(sin(stage_state_progress.a << 2) * 4)
-            {0}(y_off.a)
             o = _push_text_block(o, U(100 + x_off), U(88 + y_off), $A8 | 1)
             break
 

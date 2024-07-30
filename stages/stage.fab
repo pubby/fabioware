@@ -29,7 +29,7 @@ fn floor() U
 
 // Returns how many times the 'level up' display has shown:
 fn level() U
-    return _floor
+    return _level
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -122,7 +122,7 @@ nmi _nmi()
             {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
             state(GTROM_CHR_BANK | GTROM_NT_BANK)
 
-    puf.process(PUF_DEFAULT)
+    puf.process(%11111)
 
 
 // Stage states:
@@ -171,9 +171,10 @@ ct U[NUM_STST] _frame_times = U[NUM_STST](
     256 / 64,  // LEVEL UP
     256 / 64)  // instructions
 
-ct UF[4] _difficulty_speed = UF[4](1, 1.25, 1.5, 2.0)
-
 fn _stage_state_machine()
+    if stage_state != STST_INSTRUCTIONS
+        puf.play_track(stage_state)
+
     // Initial setup:
     switch stage_state
         case STST_FAILURE
@@ -183,7 +184,12 @@ fn _stage_state_machine()
             stage_instructions_height = 1
             break
 
-    UF increment = UF(_frame_times[stage_state] * _difficulty_speed[_difficulty])
+    ct UF[5] _difficulty_increment = UF[5](1, 8.0 / 7.0, 8.0 / 6.0, 8.0 / 5.0, 8.0 / 4.0)
+    ct U[5] _difficulty_speed = U[5](8, 7, 6, 5, 4)
+
+    U li = min(level() >> 1, 4)
+    UF increment = UF(_frame_times[stage_state] * _difficulty_increment[li])
+    puf.set_speed(_difficulty_speed[li])
     stage_state_progress = 0.0
 
     while true
@@ -253,6 +259,8 @@ fn _stage_state_machine()
 
             _frames_left = MICROGAME_FRAMES
             winning = false
+
+            puf.stop(0)
 
             // Enter the microgame:
             microgames[_microgame].entry_point()

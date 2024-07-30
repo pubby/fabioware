@@ -1,6 +1,6 @@
 // Various resources and data.
 
-audio(puf1_music)
+audio(puf1_music, "music.txt")
 audio(puf1_sfx, "sfx.txt", "sfx.nsf")
 
 charmap(
