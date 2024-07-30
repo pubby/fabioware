@@ -23,7 +23,7 @@ fn _macro_prepare_sprites()
     hide_oam(o)
 
 mode stage_#name#()
-    stage_microgame_prep()
+    stage_prep()
 
     stage_palette = @_initial_palette
     stage_update_fn = @(stage_update.#name#)

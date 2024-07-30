@@ -17,9 +17,7 @@ nmi _macro_nmi()
     ppu_upload_palette()
     ppu_upload_oam_poll_pads(0)
     if paused
-        state(GTROM_CHR_BANK | GTROM_NT_BANK)
-        {PPUCTRL}(PPUCTRL_NMI_ON | PPUCTRL_NT_2C00 | PPUCTRL_BG_PT_1000)
-        {PPUMASK}(PPUMASK_BG_ON | PPUMASK_NO_CLIP)
+        paused_nmi()
     else
         state(0)
         _nmi()

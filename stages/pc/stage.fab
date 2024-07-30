@@ -164,6 +164,7 @@ fn _init()
     ppu_upload_rlz(@_stage_nt)
 
 fn _nmi()
+    ppu_reset_scroll(0, 0)
 
 fn _update()
     if nmi_counter & %11 == 0

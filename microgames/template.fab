@@ -1,5 +1,10 @@
 //-----------------------------------------------------------------------------
 //
+// This file explains how to create microgames, and provides some starter
+// code which you can modify.
+//
+//-----------------------------------------------------------------------------
+//
 // YOU MUST DEFINE THESE GLOBALS:
 // '_instructions':    An array of instruction strings.
 // '_setup':           A function called before your microgame starts.
@@ -22,22 +27,33 @@
 //     your code in a single file.
 // (3) Using the 'state' keyword. This breaks the Fabioware runtime!
 // (4) Changing modes. This breaks the Fabioware runtime!
+// (5) Including your own DPCM sounds or adding custom PUF sounds/music.
+//     This takes up too much space, so only use the ones provided.
+// (6) Using complicated control schemes. Most games should use the D-pad
+//     and A-button exclusively. Never use Start or Select.
 //
 // THINGS TO DO:
-// (1) Do support the four possible difficulty levels, using the 'difficulty()'
+// (1) Do put all your files in a folder inside the 'microgames/' folder.
+// (2) Do support the four possible difficulty levels, using the 'difficulty()'
 //     function to check what difficulty has been reached.
-// (2) Do set the 'winning' variable to mark if the microgame has been won.
+// (3) Do set the 'winning' variable to mark if the microgame has been won.
 //
 // FABIOWARE INTERFACE:
 //   fn difficulty() U
-//       Returns the current difficulty level, in the range [0, 3].
-///      0 is easy, while 3 is the hardest.
-//   fn frames_left() UU
+//       Returns the current difficulty level, in the range [0, 2].
+///      0 is easy, while 2 is the hardest.
+//   fn frames_left() U
 //       Returns how many frames you have left until the microgame ends.
 //   Bool winning
 //       Assign this variable to mark if the microgame was beaten or not.
 //   fn puf.play(U sfx)
-//       Plays a sound effect. See 'puf_sfx_list.txt' for a list of options!
+//       Plays a sound effect. See the TRACK lines of 'resources/sfx.txt'
+//       to see the list of effects.
+//
+// Other libraries are listed in the fabioware.cfg file.
+// It's a good idea to peruse these library files in the '/lib' folder
+// to see what functionality they provide.
+//
 //-----------------------------------------------------------------------------
 
 // This macro invocation is required.
@@ -48,9 +64,39 @@
 macro("microgame", "my_identifier")
 : +fork_scope // This modifier is required! Don't remove it!
 
-// Global variables should be defined inside the /_microgame group.
+// Global variables should be defined inside the '/_microgame' group.
 // The variables in this group will be initialized when your microgame starts.
 vars /_microgame
+    U _example_varable = 10 // Example of a variable and its initialization.
+
+// Typically you should put palette data in the '/palettes' group,
+// and copy them to the 'palette' variable using 'load_palette'.
+data /palettes
+    [25] _example_palette // Example of palette data.
+        // Background colors:
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        // Sprite colors:
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        U[3]($0F, $0F, $0F)
+        // Universal background color:
+        U($0F)
+
+// Typically you should put CHR data in the '/donut' group,
+// and upload them to the PPU using the 'ppu_upload_donut' function.
+data /donut
+    [] _example_chr // Example of importing CHR data.
+        file(donut, "my_chr.png")
+
+// Typically you should put nametable data in the '/rlz' group,
+// and upload them to the PPU using the 'ppu_upload_rlz' function.
+data /rlz
+    [] _example_nt // Example of importing nametable data.
+        file(rlz, "my_chr.nam")
 
 // '_instructions' are a list of possible instruction strings.
 // The FabioWare runtime will randomly select a string to display before the
@@ -71,21 +117,45 @@ ct CCC/strings[] _instructions = CCC/strings[](@"Do the thing!")
 // NOTE: Rendering and NMI are OFF during '_setup'; do not turn them on!
 //       Additionally, do not modify the PPU's internal palette here.
 fn _setup(U instructions_index)
+    // Example of setting the 'palette' variable:
+    load_palette(@_example_palette)
+
+    // Example of uploading CHR:
+    ppu_reset_addr($0000)
+    ppu_upload_donut(@_example_chr, _example_chr.chunks)
+
+    // Example of uploading nametable:
+    ppu_reset_addr($2000)
+    ppu_upload_rlz(@_example_nt)
 
 // '_nmi' is called once per frame, at the start of NMI.
 // You can modify PPU state here, so long as you're within VBLANK!
 // NOTE: Several aspects of the NMI are already handled for you, specifically
 //       the palette, OAM, music engine, and controller updates.
 fn _nmi()
+    // Typically you want to set PPU registers last:
+    ppu_reset_scroll(0, 0)
+    {PPUCTRL}(PPUCTRL_NMI_ON)
+    {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
 
 // '_prepare_sprites' is called to assign the 'oam' buffer.
 // This occurs both after `_setup`, and after `_loop`.
 // Typically you'd use functions like 'push_oam' here.
 fn _prepare_sprites()
+    U o = 0 // Our index into the OAM buffer
+
+    o = push_oam(o, 100, 50, $00, 0) // Example of adding a sprite.
+
+    hide_oam(o) // Clear the remaining OAM.
 
 // '_loop' is called once per frame, while your microgame is running.
 // Put all your game logic here, handling user input and so on.
 // This function should also set the 'winning' variable to determine
 // if the microgame's victory condition was met.
 fn _loop()
+    // Example of setting 'winning':
+    winning = true
+
+    // Example of playing a sound effect:
+    puf.play_sfx(puf_sfx_punch)
 

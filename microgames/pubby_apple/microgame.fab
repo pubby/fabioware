@@ -95,7 +95,7 @@ fn _loop()
     if !winning
         // Handle input
         if pads[0].pressed & BUTTON_A
-            ct U[4] particle_count = U[4](16, 8, 4, 2)
+            ct U[3] particle_count = U[3](16, 8, 4)
 
             puf.play_sfx(puf_sfx_knock)
 

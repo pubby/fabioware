@@ -11,11 +11,13 @@ fn difficulty() U
 ct Int EASY   = 0
 ct Int MEDIUM = 1
 ct Int HARD   = 2
-ct Int INSANE = 3
 
 // Returns how many frames are left before the microgame ends.
-fn frames_left() UU
+fn frames_left() U
     return _frames_left
+
+// How long each microgame lasts:
+ct Int MICROGAME_FRAMES = 180
 
 // Returns how many lives are left:
 fn lives() U
@@ -49,7 +51,7 @@ vars /stage
     U _lives = 3
     U _floor = 1
     U _level = 0
-    UU _frames_left
+    U _frames_left
 
     U stage_state
 
@@ -59,6 +61,9 @@ vars /stage
 
     U[8] _prev_microgames = U[8]($FF)
     U _prev_microgames_i = 0
+
+    // Used when pausing to preserve the palette:
+    U[25] _palette_copy
 
 vars /stage_transient
     // These are used to upload direction strings to the PPU:
@@ -89,29 +94,31 @@ nmi _nmi()
         ppu_upload_palette()
 
     ppu_upload_oam_poll_pads(0)
-    stage_nmi_fn()
-    ppu_reset_scroll(0, 0)
-
-    if stage_instructions_height == $80
-        {PPUCTRL}(PPUCTRL_NMI_ON | PPUCTRL_BG_PT_1000)
-        state(GTROM_CHR_BANK)
-        {PPUMASK}(PPUMASK_BG_ON | PPUMASK_NO_CLIP)
-    else if stage_instructions_height 
-        {PPUCTRL}(stage_ppuctrl)
-        {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
-        state(GTROM_CHR_BANK | GTROM_NT_BANK)
-        ppu_await_status(PPUSTATUS_SPR_0)
-        {PPUCTRL}(PPUCTRL_NMI_ON | PPUCTRL_BG_PT_1000)
-        state(GTROM_CHR_BANK)
-        {PPUMASK}(PPUMASK_BG_ON | PPUMASK_NO_CLIP)
-        ppu_await_status_set(PPUSTATUS_SPR_OVERFLOW)
-        state(GTROM_CHR_BANK | GTROM_NT_BANK)
-        {PPUCTRL}(stage_ppuctrl)
-        {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
+    if paused
+        paused_nmi()
     else
-        {PPUCTRL}(stage_ppuctrl)
-        {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
-        state(GTROM_CHR_BANK | GTROM_NT_BANK)
+        stage_nmi_fn()
+        
+        if stage_instructions_height == $80
+            {PPUCTRL}(PPUCTRL_NMI_ON | PPUCTRL_BG_PT_1000)
+            state(GTROM_CHR_BANK)
+            {PPUMASK}(PPUMASK_BG_ON | PPUMASK_NO_CLIP)
+        else if stage_instructions_height 
+            {PPUCTRL}(stage_ppuctrl)
+            {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
+            state(GTROM_CHR_BANK | GTROM_NT_BANK)
+            ppu_await_status(PPUSTATUS_SPR_0)
+            {PPUCTRL}(PPUCTRL_NMI_ON | PPUCTRL_BG_PT_1000)
+            state(GTROM_CHR_BANK)
+            {PPUMASK}(PPUMASK_BG_ON | PPUMASK_NO_CLIP)
+            ppu_await_status_set(PPUSTATUS_SPR_OVERFLOW)
+            state(GTROM_CHR_BANK | GTROM_NT_BANK)
+            {PPUCTRL}(stage_ppuctrl)
+            {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
+        else
+            {PPUCTRL}(stage_ppuctrl)
+            {PPUMASK}(PPUMASK_ON | PPUMASK_NO_CLIP)
+            state(GTROM_CHR_BANK | GTROM_NT_BANK)
 
     puf.process(PUF_DEFAULT)
 
@@ -177,23 +184,29 @@ fn _stage_state_machine()
     UF increment = UF(_frame_times[stage_state] * _difficulty_speed[_difficulty])
     stage_state_progress = 0.0
 
-    do while !(stage_state_progress += increment)
+    while true
         nmi
         update_pads()
-        stage_update_fn()
+        _handle_paused()
 
-        switch stage_state
-            case STST_GAME_OVER
-                // Allow quitting game over screen early:
-                if stage_state_progress > 64 && pads[0].pressed & BUTTON_START
-                    goto done_waiting
-                break
-            case STST_INSTRUCTIONS
-                // Handle instructions growing:
-                stage_instructions_height += 1
-                stage_instructions_height *= 1.5
-                if stage_instructions_height > 100
-                    stage_instructions_height = $80
+        if !paused
+            stage_update_fn()
+
+            switch stage_state
+                case STST_GAME_OVER
+                    // Allow quitting game over screen early:
+                    if stage_state_progress > 64 && pads[0].pressed & BUTTON_START
+                        goto done_waiting
+                    break
+                case STST_INSTRUCTIONS
+                    // Handle instructions growing:
+                    stage_instructions_height += 1
+                    stage_instructions_height *= 1.5
+                    if stage_instructions_height > 100
+                        stage_instructions_height = $80
+                    break
+
+            if stage_state_progress += increment
                 break
 
     label done_waiting
@@ -223,7 +236,7 @@ fn _stage_state_machine()
             break
         case STST_LEVEL_UP
             _level += 1
-            if _floor & %111 == 1 && _difficulty < INSANE
+            if _floor & %111 == 1 && _difficulty < HARD
                 _difficulty += 1
             stage_state = STST_DISPLAY_FLOOR
             break
@@ -236,7 +249,7 @@ fn _stage_state_machine()
             {PPUMASK}(0)
             state(0)
 
-            _frames_left = 180
+            _frames_left = MICROGAME_FRAMES
             winning = false
 
             // Enter the microgame:
@@ -278,22 +291,32 @@ fn _select_microgame()
     _prev_microgames_i += 1
     _prev_microgames_i &= %111
 
-fn handle_pause()
+fn _handle_paused()
+: -inline
     if pads[0].pressed & BUTTON_START
-        paused = true
-        while true
-            nmi
-            update_pads()
-            if pads[0].pressed & BUTTON_START
-                paused = false
-                break
+        paused = !paused
+        puf.play_sfx(puf_sfx_select)
+        if paused
+            _palette_copy = palette
+            palette[PALETTE_BG+0] = $20
+            palette[PALETTE_BG+1] = $20
+            palette[PALETTE_BG+2] = $20
+            palette[PALETTE_UBC] = $0F
+        else
+            palette = _palette_copy
+
+fn paused_nmi()
+: -inline
+    state(GTROM_CHR_BANK | GTROM_NT_BANK)
+    ppu_reset_scroll(0, 0)
+    {PPUCTRL}(PPUCTRL_NMI_ON | PPUCTRL_NT_2C00 | PPUCTRL_BG_PT_1000)
+    {PPUMASK}(PPUMASK_BG_ON | PPUMASK_NO_CLIP)
 
 // Gets called once per frame before the microgame's '_update' call.
 fn pre_tick()
 : -inline
     update_pads()
-    if pads[0].pressed & BUTTON_START
-        paused = !paused
+    _handle_paused()
 
 // Gets called once per frame following the microgame's '_update' call.
 fn post_tick()
@@ -307,8 +330,16 @@ fn post_tick()
         goto mode stage_screen(new_state)
         : preserves /stage
 
-fn stage_microgame_prep()
+// Called when a stage begins.
+fn stage_prep()
 : -inline
     {PPUCTRL}(0)
     {PPUMASK}(0)
     state(GTROM_CHR_BANK | GTROM_NT_BANK)
+    ppu_reset_addr($2C00)
+    ppu_upload_fill($00, 1024)
+    ct U length = len("Paused")-1
+    ppu_set_addr($2C00 + 14*32 + UU((32 - length) >> 1))
+    for U i = 0; i < length; i += 1
+        {PPUDATA}(@"Paused"[i])
+

@@ -49,7 +49,7 @@ data /rlz
         file(rlz, "tub.nam", false)
 
 fn _setup() PPP/strings
-    ct U[4] difficulty_table = U[4](24, 16, 12, 8)
+    ct U[3] difficulty_table = U[3](24, 16, 8)
     _goal_max = _water_level - 8 - randb(32)
     _goal_min = _goal_max - difficulty_table[difficulty()]
 
