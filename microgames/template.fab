@@ -34,8 +34,8 @@
 //
 // THINGS TO DO:
 // (1) Do put all your files in a folder inside the 'microgames/' folder.
-// (2) Do support the four possible difficulty levels, using the 'difficulty()'
-//     function to check what difficulty has been reached.
+// (2) Do support the three possible difficulty levels, using the 
+//     'difficulty()' function to check what difficulty has been reached.
 // (3) Do set the 'winning' variable to mark if the microgame has been won.
 //
 // FABIOWARE INTERFACE:
