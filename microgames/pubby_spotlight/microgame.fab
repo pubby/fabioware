@@ -1,5 +1,5 @@
 macro("microgame", "pubby_spotlight")
-: +fork_scope // This modifier is required! Don't remove it!
+: +fork_scope
 
 vars /_microgame
     // Scroll registers:
@@ -15,7 +15,7 @@ vars /_microgame
     U _o_timer = 5
 
 data /palettes
-    [25] _example_palette // Example of palette data.
+    [25] _palette
         // Background colors:
         U[3]($18, $28, $38)
         U[3]($0F, $0F, $0F)
@@ -48,7 +48,7 @@ ct CCC/strings[] _instructions = CCC/strings[](@"Keep lit!")
 
 fn _setup(U instructions_index)
     // Palette:
-    load_palette(@_example_palette)
+    load_palette(@_palette)
 
     // CHR:
     ppu_reset_addr($0000)

@@ -1,5 +1,5 @@
 macro("microgame", "pubby_bath")
-: +fork_scope   // This modifier is required!
+: +fork_scope
 
 ct CCC/strings[] _instructions = CCC/strings[](@"Fill!")
 
