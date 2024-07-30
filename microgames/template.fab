@@ -46,7 +46,7 @@
 //       Returns how many frames you have left until the microgame ends.
 //   Bool winning
 //       Assign this variable to mark if the microgame was beaten or not.
-//   fn puf.play(U sfx)
+//   fn puf.play_sfx(U sfx)
 //       Plays a sound effect. See the TRACK lines of 'resources/sfx.txt'
 //       to see the list of effects.
 //
